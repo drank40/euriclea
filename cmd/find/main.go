@@ -77,7 +77,7 @@ func main() {
 
 	var err error
 
-	if len(flag.Args()) < 2 {
+	if len(flag.Args()) != 2 {
 		fmt.Println("Usage: extract <input.pcap> <signature>")
 		os.Exit(-1)
 	}
@@ -89,7 +89,7 @@ func main() {
 	handle_err(err)
 
 	outWriter := pcapgo.NewWriter(io_out)
-	err = outWriter.WriteFileHeader(65536, layers.LinkTypeEthernet)
+	err = outWriter.WriteFileHeader(65536, layers.LinkTypeRaw)
 	handle_err(err)
 
 	if file_in == "-" {

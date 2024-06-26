@@ -9,12 +9,12 @@ import (
 	"os/signal"
 	"regexp"
 	"slices"
-	"strings"
 	"sync"
 	"syscall"
-
+	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
+	"github.com/google/gopacket/pcapgo"
 	log "github.com/sirupsen/logrus"
 
 	"pcap-go/pkg/fingerprint"
@@ -30,9 +30,9 @@ var (
 var (
 	verbose     = flag.Bool("v", false, "Turn on verbose output")
 	veryVerbose = flag.Bool("vv", false, "Turn on very verbose output")
-	plotFlag    = flag.Bool("p", false, "Turn on time plotting")
 	bpf         = flag.String("f", "", "BPF filter")
 	regexRule   = flag.String("r", "", "Regex rule")
+    file_out    = flag.String("o", "", "Output pcap")
 )
 
 func init() {
@@ -64,7 +64,9 @@ func init() {
 
 func epilogue() {
 	io_in.Close()
-	io_out.Close()
+    if io_out != nil {
+	    io_out.Close()
+    }
 
 	log.Infoln("Done!")
 }
@@ -79,18 +81,24 @@ func main() {
 	defer once.Do(epilogue)
 
 	var err error
+    var outWriter *pcapgo.Writer
 
-	if len(flag.Args()) < 2 {
-		fmt.Println("Provide an input and output file as plain args.")
+	if len(flag.Args()) != 1 {
+		fmt.Println("Provide an input file as plain args.")
 		flag.Usage()
 		os.Exit(-1)
 	}
 
 	file_in := flag.Arg(0)
-	file_out := flag.Arg(1)
 
-	io_out, err = os.Create(file_out)
-	handle_err(err)
+    if *file_out != "" {
+	    io_out, err = os.Create(*file_out)
+	    handle_err(err)
+	    outWriter = pcapgo.NewWriter(io_out)
+	    err = outWriter.WriteFileHeader(65536, layers.LinkTypeRaw)
+	    handle_err(err)
+    }
+
 
 	if file_in == "-" {
 		log.Infoln("Reading from stdin")
@@ -105,7 +113,8 @@ func main() {
 
 	if *bpf != "" {
 		log.Infoln("Setting BPF filter to:", *bpf)
-		err = rd.SetBPFFilter(strings.Join(flag.Args()[2:], " "))
+        fmt.Println(flag.Args())
+		err = rd.SetBPFFilter(*bpf)
 		handle_err(err)
 	}
 
@@ -143,6 +152,10 @@ func main() {
 			continue
 		}
 
+        if outWriter != nil {
+		    outWriter.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
+        }
+
 		fp, err := fingerprint.ExtractFingerprint(packet)
 		if err != nil {
 			log.Traceln(err)
@@ -153,8 +166,8 @@ func main() {
 		if !slices.Contains(fgCollected, fp) {
 			fgCollected = append(fgCollected, fp)
 		}
-
-	}
+        
+    }
 
 	log.Infoln("Collected", len(fgCollected), "fingerprints")
 	for _, fg := range fgCollected {

@@ -29,6 +29,7 @@ def main():
 
     if(len(sys.argv) != 2):
         print("Numero errato di arg")
+        exit(1)
     
     filename = sys.argv[1]
 
