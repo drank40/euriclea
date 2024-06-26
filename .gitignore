@@ -1,4 +1,5 @@
 *.pcap
 find
 venv
+__pycache__
 extract
