@@ -16,7 +16,10 @@ import (
 	"pcap-go/pkg/fingerprint"
 )
 
-var pointsRegex = regexp.MustCompile(`\.+`)
+var (
+	pointsRegex = regexp.MustCompile(`\.+`)
+	spacesRegex = regexp.MustCompile(`\s+`)
+)
 
 const logPrefix = "extract:"
 
@@ -42,17 +45,17 @@ func processPacket(packet gopacket.Packet) {
 			body[i] = '.'
 		}
 	}
-
-	if nonPrintable <= len(body)/2 {
+	if !(*displayData) {
+		body = []byte("")
+	} else if nonPrintable <= len(body)/2 {
 		// replace sequences of non-printable characters with ...
 		body = pointsRegex.ReplaceAll(body, []byte("..."))
-	} else if *displayData {
-		body = []byte(fmt.Sprintf("... %d bytes of data ...", len(body)))
+		body = spacesRegex.ReplaceAll(body, []byte(" "))
 	} else {
-		body = nil
+		body = []byte(fmt.Sprintf("... %d bytes of data ...", len(body)))
 	}
 
-	if len(body) != 0 {
+	if body != nil {
 		networkFlow := packet.NetworkLayer().NetworkFlow()
 		fmt.Printf("\t%15s -> %-15s %15s:\t%s\n",
 			networkFlow.Src().String(),
