@@ -6,6 +6,7 @@ require (
 	github.com/florianl/go-nfqueue/v2 v2.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/mdlayher/netlink v1.7.2
+	github.com/olekukonko/ts v0.0.0-20171002115256-78ecb04241c0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/yelinaung/go-haikunator v0.0.0-20221222235932-36bf4c441150
 )

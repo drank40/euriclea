@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+    "errors"
+    "sync"
 	"os/signal"
 	"regexp"
 	"time"
-
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
-
-	"pcap-go/pkg/fingerprint"
+	"pcap-go/pkg/lib"
 )
 
 var (
@@ -22,7 +21,9 @@ var (
 	spacesRegex = regexp.MustCompile(`\s+`)
 )
 
-const logPrefix = "extract:"
+var startTime time.Time
+var fgCollected = make([]lib.Fingerprint, 0)
+var fgMutex sync.Mutex
 
 func processPacket(packet gopacket.Packet) {
 	tcpLayer := packet.Layer(layers.LayerTypeTCP)
@@ -30,7 +31,7 @@ func processPacket(packet gopacket.Packet) {
 		return
 	}
 
-	fp, err := fingerprint.ExtractFingerprint(packet)
+	fp, err := lib.ExtractFingerprint(packet)
 	if err != nil {
 		return
 	}
@@ -39,6 +40,22 @@ func processPacket(packet gopacket.Packet) {
 	if *fingerprintToMatch != "" && fp.Haiku() != *fingerprintToMatch {
 		return
 	}
+
+    if *listMode {
+        fgMutex.Lock()
+        exists := false
+        for _, collected := range fgCollected {
+            if collected.Delta == fp.Delta {
+                exists = true
+                break
+            }
+        }
+        if !exists {
+            fgCollected = append(fgCollected, fp)
+        }
+
+        fgMutex.Unlock()
+    }
 
 	body := tcpLayer.LayerPayload()
 
@@ -78,6 +95,7 @@ func processPacket(packet gopacket.Packet) {
 }
 
 var (
+	listMode           = flag.Bool("L", false, "suppress regular output, list fingerprints")
 	displayData        = flag.Bool("data", false, "display data")
 	fingerprintToMatch = flag.String("fg", "", "fingerprint to match")
 	showProgress       = flag.Bool("p", false, "show progress")
@@ -94,14 +112,12 @@ func main() {
 	if *regexStr != "" {
 		regex, err = regexp.Compile(*regexStr)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, logPrefix, "failed to compile regex:", err)
-			os.Exit(1)
+            lib.LogFatalError("failed to compile regex:", err)
 		}
 	}
 
 	if len(flag.Args()) != 1 {
-		fmt.Fprintln(os.Stderr, "Usage: nfqueue <pcap file> or nfqueue - for stdin")
-		os.Exit(1)
+        lib.LogFatalError("Usage : euriclea {input.pcap}", errors.New("") )
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -110,33 +126,17 @@ func main() {
 		cancel()
 	}()
 
-	var reader *os.File
-
-	if flag.Arg(0) == "-" {
-		reader = os.Stdin
-	} else {
-		reader, err = os.Open(flag.Arg(0))
-		if err != nil {
-			fmt.Fprintln(os.Stderr, logPrefix, "failed to open file", flag.Arg(0), ":", err)
-			os.Exit(1)
-		}
-	}
-
-	source, err := pcap.OpenOfflineFile(reader)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, logPrefix, "failed to open pcap file:", err)
-		os.Exit(1)
-	}
+    source, reader := lib.OpenPcapSource(flag.Arg(0))
 
 	err = source.SetBPFFilter(*bpfStr)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, logPrefix, "failed to set BPF filter:", err)
-		os.Exit(1)
+        lib.LogFatalError("failed to set BPF filter: ", err)
 	}
 
 	handle := gopacket.NewPacketSource(source, source.LinkType())
 
 	packetCount := uint64(0)
+
 	startTime = time.Now()
 	for {
 		select {
@@ -151,39 +151,32 @@ func main() {
 				cancel()
 				break
 			}
-			fmt.Fprintln(os.Stderr, logPrefix, "failed to read packet:", err)
-			os.Exit(1)
+            lib.LogFatalError("malformed packet: ", err)
 		}
 
 		go processPacket(packet)
 
 		packetCount++
-		printProgress(packetCount)
+        if *showProgress {
+		    lib.PrintProgress(startTime, packetCount, 10_000)
+        }
 	}
+
+    
 
 	// wait for the context to be done
 	<-ctx.Done()
 
+    //Va sincronizzato meglio con le goroutine, non ho tempo ora
+    if *listMode {
+        fmt.Fprintln(os.Stderr, "Collected", len(fgCollected), "fingerprints")
+	    for _, fg := range fgCollected {
+		    fmt.Fprintln(os.Stderr, "-", fg)
+	    }
+    }
+
 	err = reader.Close()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, logPrefix, "failed to close file:", err)
-		os.Exit(1)
-	}
-}
-
-var startTime time.Time
-
-func printProgress(packetCount uint64) {
-	if *showProgress && packetCount%10_000 == 0 {
-		if packetCount > 10_000 {
-			// clear last line
-			fmt.Fprint(os.Stderr, "\033[1A\033[K")
-		}
-
-		pktPerSec := float64(packetCount) / time.Since(startTime).Seconds()
-		pktPerSec /= 1_000
-
-		fmt.Fprintf(os.Stderr, "%s processed %dK packets (%.0f Kpkt/s)\n",
-			logPrefix, packetCount/1000, pktPerSec)
+        lib.LogFatalError("failed to close file: ", err)
 	}
 }
