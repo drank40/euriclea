@@ -45,7 +45,7 @@ func roundup(x, n uint64) uint64 {
 
 func extractTimestamps(opts []layers.TCPOption) (uint64, uint64, error) {
 	for _, opt := range opts {
-		if opt.OptionType == 8 && len(opt.OptionData) >= 8 { // Check kind and sufficient data length
+		if opt.OptionType == layers.TCPOptionKindTimestamps && len(opt.OptionData) >= 8 { // Check kind and sufficient data length
 			tsVal := uint64(opt.OptionData[0])<<24 | uint64(opt.OptionData[1])<<16 | uint64(opt.OptionData[2])<<8 | uint64(opt.OptionData[3])
 			tsEchoReply := uint64(opt.OptionData[4])<<24 | uint64(opt.OptionData[5])<<16 | uint64(opt.OptionData[6])<<8 | uint64(opt.OptionData[7])
 
