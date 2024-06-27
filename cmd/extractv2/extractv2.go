@@ -34,6 +34,11 @@ func processPacket(packet gopacket.Packet) {
 		return
 	}
 
+	// if a fingerprint is provided, only show packets that match
+	if *fingerprintToMatch != "" && fp.Haiku() != *fingerprintToMatch {
+		return
+	}
+
 	body := tcpLayer.LayerPayload()
 
 	// count the number of non-printable characters
@@ -67,7 +72,8 @@ func processPacket(packet gopacket.Packet) {
 }
 
 var (
-	displayData = flag.Bool("data", false, "display data")
+	displayData        = flag.Bool("data", false, "display data")
+	fingerprintToMatch = flag.String("fg", "", "fingerprint to match")
 )
 
 func main() {
@@ -123,6 +129,7 @@ func main() {
 		}
 
 		processPacket(packet)
+
 	}
 
 	// wait for the context to be done

@@ -10,13 +10,21 @@ import (
 )
 
 type Fingerprint struct {
-	delta uint64
+	Delta uint64 // Delta between packet timestamp and host timestamp
+
+	haiku string
 }
 
-func (fg Fingerprint) Haiku() string                  { return haikunator.New(int64(fg.delta)).Haikunate() }
-func (fg Fingerprint) String() string                 { return fg.Haiku() }
-func (fg Fingerprint) MatchesHaiku(haiku string) bool { return fg.Haiku() == haiku }
-func (fg Fingerprint) MatchesDelta(delta uint64) bool { return fg.delta == delta }
+// Haiku returns a haiku string representation of the fingerprint
+func (fg Fingerprint) Haiku() string {
+	if fg.haiku == "" {
+		fg.haiku = fg.generateHaiku()
+	}
+	return fg.haiku
+}
+
+// String returns a string representation of the fingerprint
+func (fg Fingerprint) String() string { return fg.Haiku() }
 
 func ExtractFingerprint(packet gopacket.Packet) (Fingerprint, error) {
 	var fg Fingerprint
@@ -34,9 +42,13 @@ func ExtractFingerprint(packet gopacket.Packet) (Fingerprint, error) {
 	}
 
 	delta := roundup(uint64(packet.Metadata().Timestamp.UnixMilli())-tsVal, 1000)
-	fg = Fingerprint{delta: delta}
+	fg = Fingerprint{Delta: delta}
 	return fg, nil
 
+}
+
+func (fg Fingerprint) generateHaiku() string {
+	return haikunator.New(int64(fg.Delta)).Haikunate()
 }
 
 func roundup(x, n uint64) uint64 {
