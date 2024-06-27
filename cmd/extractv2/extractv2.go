@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -40,6 +41,11 @@ func processPacket(packet gopacket.Packet) {
 	}
 
 	body := tcpLayer.LayerPayload()
+
+	// if a regex is provided, only show packets that match
+	if regex != nil && !regex.Match(body) {
+		return
+	}
 
 	// count the number of non-printable characters
 	// if it is too high, we just show the number of bytes
@@ -74,10 +80,24 @@ func processPacket(packet gopacket.Packet) {
 var (
 	displayData        = flag.Bool("data", false, "display data")
 	fingerprintToMatch = flag.String("fg", "", "fingerprint to match")
+	showProgress       = flag.Bool("p", false, "show progress")
+	regexStr           = flag.String("r", "", "regex to match")
+	bpfStr             = flag.String("bpf", "", "BPF filter")
+	regex              *regexp.Regexp
 )
 
 func main() {
+	var err error
+
 	flag.Parse()
+
+	if *regexStr != "" {
+		regex, err = regexp.Compile(*regexStr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, logPrefix, "failed to compile regex:", err)
+			os.Exit(1)
+		}
+	}
 
 	if len(flag.Args()) != 1 {
 		fmt.Fprintln(os.Stderr, "Usage: nfqueue <pcap file> or nfqueue - for stdin")
@@ -91,7 +111,6 @@ func main() {
 	}()
 
 	var reader *os.File
-	var err error
 
 	if flag.Arg(0) == "-" {
 		reader = os.Stdin
@@ -109,8 +128,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	err = source.SetBPFFilter(*bpfStr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, logPrefix, "failed to set BPF filter:", err)
+		os.Exit(1)
+	}
+
 	handle := gopacket.NewPacketSource(source, source.LinkType())
 
+	packetCount := uint64(0)
+	startTime = time.Now()
 	for {
 		select {
 		case <-ctx.Done():
@@ -128,8 +155,10 @@ func main() {
 			os.Exit(1)
 		}
 
-		processPacket(packet)
+		go processPacket(packet)
 
+		packetCount++
+		printProgress(packetCount)
 	}
 
 	// wait for the context to be done
@@ -139,5 +168,22 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, logPrefix, "failed to close file:", err)
 		os.Exit(1)
+	}
+}
+
+var startTime time.Time
+
+func printProgress(packetCount uint64) {
+	if *showProgress && packetCount%10_000 == 0 {
+		if packetCount > 10_000 {
+			// clear last line
+			fmt.Fprint(os.Stderr, "\033[1A\033[K")
+		}
+
+		pktPerSec := float64(packetCount) / time.Since(startTime).Seconds()
+		pktPerSec /= 1_000
+
+		fmt.Fprintf(os.Stderr, "%s processed %dK packets (%.0f Kpkt/s)\n",
+			logPrefix, packetCount/1000, pktPerSec)
 	}
 }
