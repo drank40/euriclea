@@ -18,6 +18,8 @@ import (
 
 var pointsRegex = regexp.MustCompile(`\.+`)
 
+const logPrefix = "extract:"
+
 func processPacket(packet gopacket.Packet) {
 	tcpLayer := packet.Layer(layers.LayerTypeTCP)
 	if tcpLayer == nil { // skip non-TCP packets
@@ -33,7 +35,6 @@ func processPacket(packet gopacket.Packet) {
 
 	// count the number of non-printable characters
 	// if it is too high, we just show the number of bytes
-
 	nonPrintable := 0
 	for i := 0; i < len(body); i++ {
 		if body[i] < 32 || body[i] > 126 {
@@ -70,7 +71,7 @@ func main() {
 	flag.Parse()
 
 	if len(flag.Args()) != 1 {
-		fmt.Println("Usage: nfqueue <pcap file> or nfqueue - for stdin")
+		fmt.Fprintln(os.Stderr, "Usage: nfqueue <pcap file> or nfqueue - for stdin")
 		os.Exit(1)
 	}
 
@@ -82,19 +83,20 @@ func main() {
 
 	var reader *os.File
 	var err error
+
 	if flag.Arg(0) == "-" {
 		reader = os.Stdin
 	} else {
 		reader, err = os.Open(flag.Arg(0))
 		if err != nil {
-			fmt.Println("extract: ", "failed to open file", flag.Arg(0), ":", err)
+			fmt.Fprintln(os.Stderr, logPrefix, "failed to open file", flag.Arg(0), ":", err)
 			os.Exit(1)
 		}
 	}
 
 	source, err := pcap.OpenOfflineFile(reader)
 	if err != nil {
-		fmt.Println("extract: ", "failed to open pcap file:", err)
+		fmt.Fprintln(os.Stderr, logPrefix, "failed to open pcap file:", err)
 		os.Exit(1)
 	}
 
@@ -110,20 +112,22 @@ func main() {
 		packet, err := handle.NextPacket()
 		if err != nil {
 			if err == io.EOF {
+				cancel()
 				break
 			}
-			fmt.Println("extract: ", "failed to read packet:", err)
+			fmt.Fprintln(os.Stderr, logPrefix, "failed to read packet:", err)
 			os.Exit(1)
 		}
 
 		processPacket(packet)
 	}
 
+	// wait for the context to be done
 	<-ctx.Done()
 
 	err = reader.Close()
 	if err != nil {
-		fmt.Println("extract: ", "failed to close file:", err)
+		fmt.Fprintln(os.Stderr, logPrefix, "failed to close file:", err)
 		os.Exit(1)
 	}
 }
