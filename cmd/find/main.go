@@ -22,8 +22,8 @@ import (
 var once sync.Once
 
 var (
-	io_in  *os.File
-	io_out *os.File
+	ioIn  *os.File
+	ioOut *os.File
 )
 
 var (
@@ -60,8 +60,8 @@ func init() {
 }
 
 func epilogue() {
-	io_in.Close()
-	io_out.Close()
+	ioIn.Close()
+	ioOut.Close()
 
 	log.Infoln("Done!")
 }
@@ -82,32 +82,33 @@ func main() {
 		os.Exit(-1)
 	}
 
-	file_in := flag.Arg(0)
+	fileIn := flag.Arg(0)
 	fingerprintStr := flag.Arg(1)
 
-	io_out, err = os.Create(*outFile)
+	ioOut, err = os.Create(*outFile)
 	handle_err(err)
 
-	outWriter := pcapgo.NewWriter(io_out)
+	outWriter := pcapgo.NewWriter(ioOut)
 	err = outWriter.WriteFileHeader(65536, layers.LinkTypeRaw)
 	handle_err(err)
 
-	if file_in == "-" {
+	if fileIn == "-" {
 		log.Infoln("Reading from stdin")
-		io_in = os.Stdin
+		ioIn = os.Stdin
 	} else {
-		io_in, err = os.Open(file_in)
+		ioIn, err = os.Open(fileIn)
 		handle_err(err)
 	}
 
-	rd, err := pcap.OpenOfflineFile(io_in)
+	handle, err := pcap.OpenOfflineFile(ioIn)
 	handle_err(err)
 
 	log.Infoln("Starting analysis...")
 
 	// Loop through packets in file
-	packetSource := gopacket.NewPacketSource(rd, rd.LinkType())
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 
+	matchedPackets := 0
 	for {
 		packet, err := packetSource.NextPacket()
 		if err != nil && !errors.Is(err, io.EOF) {
@@ -124,11 +125,13 @@ func main() {
 			continue
 		}
 
-		if fp.MatchesHaiku(fingerprintStr) {
-			log.Infoln("Matched fingerprint:", fp)
-			outWriter.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
+		if !fp.MatchesHaiku(fingerprintStr) {
+			continue
 		}
 
+		matchedPackets++
+		outWriter.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
 	}
 
+	log.Infof("Matched %d packets", matchedPackets)
 }
