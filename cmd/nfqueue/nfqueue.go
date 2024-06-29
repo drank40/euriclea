@@ -7,14 +7,16 @@ import (
 	"os"
 	"os/signal"
 	"time"
-
+    "strings"
 	"github.com/florianl/go-nfqueue/v2"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/mdlayher/netlink"
-
-	"pcap-go/pkg/fingerprint"
+	"pcap-go/pkg/lib"
 )
+
+
+var fgsToMatch []string
 
 func processPacket(nf *nfqueue.Nfqueue) nfqueue.HookFunc {
 	return func(a nfqueue.Attribute) int {
@@ -29,11 +31,18 @@ func processPacket(nf *nfqueue.Nfqueue) nfqueue.HookFunc {
 			return 0
 		}
 
-		fp, err := fingerprint.ExtractFingerprint(packet)
+		fp, _, _, err := lib.ExtractFingerprintRealTime(packet, *a.Timestamp)
+
 		if err != nil {
 			_ = nf.SetVerdict(id, nfqueue.NfAccept)
 			return 0
 		}
+
+        
+	    if *fingerprintToMatch != "" && fp.ContainedIn(fgsToMatch) {
+			_ = nf.SetVerdict(id, nfqueue.NfDrop)
+			return 0
+        }
 
 		body := tcpLayer.LayerPayload()
 		body = body[min(len(body), 100):]
@@ -57,11 +66,14 @@ func processPacket(nf *nfqueue.Nfqueue) nfqueue.HookFunc {
 }
 
 var (
-	queueNum = flag.Uint("queue", 0, "nfqueue queue number")
+	queueNum = flag.Uint("queue", 420, "nfqueue queue number")
+	fingerprintToMatch = flag.String("fg", "", "fingerprints to block")
 )
 
 func main() {
 	flag.Parse()
+
+    fgsToMatch = strings.Split(*fingerprintToMatch, ",")
 
 	config := nfqueue.Config{
 		NfQueue:      uint16(*queueNum),
