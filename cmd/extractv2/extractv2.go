@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
     "strings"
+    "sort"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcapgo"
 	"github.com/google/gopacket/layers"
@@ -28,6 +29,7 @@ var fgMutex sync.Mutex
 var wg sync.WaitGroup
 
 var fgsToMatch []string
+var fgsToUnmatch []string
 
 func processPacket(packet gopacket.Packet) {
     wg.Add(1)
@@ -43,7 +45,7 @@ func processPacket(packet gopacket.Packet) {
 	}
 
 	// if a fingerprint is provided, only show packets that match
-	if *fingerprintToMatch != "" && !fp.ContainedIn(fgsToMatch) {
+	if (*fingerprintToMatch != "" && !fp.ContainedIn(fgsToMatch)) || (*fingerprintToUnmatch != "" && fp.ContainedIn(fgsToUnmatch)) {
 		return
 	}
     
@@ -83,7 +85,8 @@ var (
 	listMode           = flag.Bool("L", false, "suppress regular output, list fingerprints")
 	displayData        = flag.Bool("data", false, "display data")
     outputPcap         = flag.String("o", "", "write the matched pkgs to this pcap")
-	fingerprintToMatch = flag.String("fg", "", "fingerprints to match")
+	fingerprintToMatch = flag.String("white", "", "fingerprints to match")
+	fingerprintToUnmatch = flag.String("black", "", "fingerprints to not match (it has priority over the whitelist)")
 	showProgress       = flag.Bool("p", false, "show progress")
 	regexStr           = flag.String("r", "", "regex to match")
 	bpfStr             = flag.String("bpf", "", "BPF filter")
@@ -97,12 +100,33 @@ func safeCloseIO(file *os.File) {
 	}
 }
 
+func listEpilogue() {
+    if *listMode {
+
+        sort.Slice(fgCollected, func(i, j int) bool {
+            return fgCollected[i].Haiku() < fgCollected[j].Haiku()
+        })
+
+        fmt.Fprintln(os.Stderr, "Collected", len(fgCollected), "fingerprints")
+	    for i, fg := range fgCollected {
+            if i < len(fgCollected)-1 {
+			    fmt.Fprint(os.Stderr, fg, ",")
+            } else {
+                fmt.Fprint(os.Stderr, fg)
+            }
+	    }
+
+        fmt.Fprintln(os.Stderr, "")
+    }
+}
+
 func main() {
 	var err error
 
 	flag.Parse()
 
     fgsToMatch = strings.Split(*fingerprintToMatch, ",")
+    fgsToUnmatch = strings.Split(*fingerprintToMatch, ",")
 
 	if *regexStr != "" {
 		regex, err = regexp.Compile(*regexStr)
@@ -147,6 +171,8 @@ func main() {
 
 	packetCount := uint64(0)
 
+    defer listEpilogue()
+
 	startTime = time.Now()
 	for {
 		select {
@@ -160,8 +186,10 @@ func main() {
 			if err == io.EOF {
 				cancel()
 				break
-			}
-            cmdUtils.LogFatalError("malformed packet: ", err)
+			} else {
+                cmdUtils.LogError("malformed packet: ", err)
+                continue
+            }
 		}
 
 		go processPacket(packet)
@@ -176,13 +204,4 @@ func main() {
 	<-ctx.Done()
     wg.Wait()
 
-    //Va sincronizzato meglio con le goroutine, non ho tempo ora
-    if *listMode {
-        fmt.Fprintln(os.Stderr, "Collected", len(fgCollected), "fingerprints")
-	    for _, fg := range fgCollected {
-		    fmt.Fprint(os.Stderr, fg, ",")
-	    }
-
-        fmt.Fprintln(os.Stderr, "")
-    }
 }
