@@ -3,3 +3,4 @@ find
 venv
 __pycache__
 extract
+*.txt
