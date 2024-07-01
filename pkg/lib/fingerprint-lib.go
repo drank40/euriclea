@@ -33,7 +33,6 @@ func (fg Fingerprint) generateHaiku() string {
 func (fg Fingerprint) String() string { return fg.Haiku() }
 
 func (sample Fingerprint) ContainedIn(toMatch []string) (bool) {
-
     for _, fg := range toMatch {
         if sample.Haiku() == fg {
             return true

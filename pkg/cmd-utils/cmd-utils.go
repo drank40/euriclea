@@ -37,6 +37,7 @@ func LogFatalError(reason string, err error) {
     os.Exit(1)
 }
 
+
 func PrintProgress(startTime time.Time, packetCount uint64, howOften uint64) {
     if packetCount%howOften == 0 {
 		if packetCount > howOften {
@@ -87,7 +88,7 @@ func ShowBodyInfo(packet gopacket.Packet, fp lib.Fingerprint, displayContent boo
             tcpFlow.Src().String(),
 			networkFlow.Dst().String(),
             tcpFlow.Dst().String(),
-            fmt.Sprintf("(%s:%d)", fp, fp.Delta),
+            fmt.Sprintf("(%s)", fp),
             packet.Metadata().Timestamp,
 			body)
 	}
