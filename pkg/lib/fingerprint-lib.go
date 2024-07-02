@@ -58,7 +58,7 @@ func ExtractFingerprint(packet gopacket.Packet) (Fingerprint, uint64, uint64, er
 	}
 
 
-	delta := roundup(uint64(packet.Metadata().Timestamp.UnixMilli())-tsVal, 2000)
+	delta := roundup(uint64(packet.Metadata().Timestamp.UnixMilli())-tsVal, 3000)
 	fg = Fingerprint{Delta: delta}
 	return fg, uint64(packet.Metadata().Timestamp.UnixMilli()), tsVal, nil
 
@@ -89,6 +89,30 @@ func ExtractFingerprintRealTime(packet gopacket.Packet, t time.Time) (Fingerprin
 	fg = Fingerprint{Delta: delta}
 	return fg, uint64(millis), tsVal, nil
 }
+
+
+func ExtractFingerprintRealTimeFallback(packet gopacket.Packet) (Fingerprint, uint64, uint64, error) {
+	var fg Fingerprint
+
+	tcpLayer := packet.Layer(layers.LayerTypeTCP)
+	if tcpLayer == nil {
+		return fg, 0, 0, errors.New("no TCP layer")
+	}
+
+	tcpPacket, _ := tcpLayer.(*layers.TCP)
+	tsVal, _, err := ExtractTimestamps(tcpPacket.Options)
+
+	if err != nil {
+		return fg, 0, 0, err
+	}
+
+    millis := time.Now().UnixMilli()
+
+	delta := roundup(uint64(millis)-tsVal, 2000)
+	fg = Fingerprint{Delta: delta}
+	return fg, uint64(millis), tsVal, nil
+}
+
 
 func roundup(x, n uint64) uint64 {
 	return uint64(math.Ceil(float64(x)/float64(n))) * n

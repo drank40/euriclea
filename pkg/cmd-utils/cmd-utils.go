@@ -82,13 +82,13 @@ func ShowBodyInfo(packet gopacket.Packet, fp lib.Fingerprint, displayContent boo
 	    //tsVal, tsEcho, _ := lib.ExtractTimestamps(tcpPacket.Options)
         
 
-        fmt.Fprintf(os.Stderr, "\t%15s:%-5s -> %-10s:%-5s %20s:\t%s\n\n %s\n",
+        fmt.Fprintf(os.Stderr, "\t\033[32m%15s:%-5s\033[0m-> %-10s:%-5s %20s:\t%s\n\n %s\n",
             
 			networkFlow.Src().String(),
             tcpFlow.Src().String(),
 			networkFlow.Dst().String(),
             tcpFlow.Dst().String(),
-            fmt.Sprintf("(%s)", fp),
+            fmt.Sprintf("(\033[33m%s\033[0m)", fp),
             packet.Metadata().Timestamp,
 			body)
 	}

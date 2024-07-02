@@ -29,11 +29,33 @@ var host net.IP
 var flagRegex = regexp.MustCompile(`[A-Z0-9]{31}=`)
 var secretRegex *regexp.Regexp 
 
+func printBody(body []byte, packet gopacket.Packet, fp lib.Fingerprint, id uint32) {
+    body = body[min(len(body), 100):]
+    // replace non-printable characters with .
+    for i := 0; i < len(body); i++ {
+        if body[i] < 32 || body[i] > 126 {
+            body[i] = '.'
+        }
+    }
+
+    if len(body) != 0 {
+        networkFlow := packet.NetworkLayer().NetworkFlow()
+        fmt.Printf("[%d]\t\033[32m%s\033[0m -> %s (\033[33m%s\033[0m): %s\n", id,
+            networkFlow.Src().String(), networkFlow.Dst().String(),
+            fp, body)
+    }
+
+}
+
 func processPacket(nf *nfqueue.Nfqueue) nfqueue.HookFunc {
 	return func(a nfqueue.Attribute) int {
+        var fp lib.Fingerprint
+        var errFg error
 		id := *a.PacketID
 
 		packet := gopacket.NewPacket(*a.Payload, layers.LayerTypeIPv4, gopacket.Default)
+
+        
 
 		tcpLayer := packet.Layer(layers.LayerTypeTCP)
 
@@ -44,9 +66,14 @@ func processPacket(nf *nfqueue.Nfqueue) nfqueue.HookFunc {
 			return 0
 		}
 
-		fp, _, _, err := lib.ExtractFingerprintRealTime(packet, *a.Timestamp)
+        //è successo sul mio server con Debian, meglio avere un fallback e non crashare
+        if(a.Timestamp == nil) {
+		    fp, _, _, errFg = lib.ExtractFingerprintRealTimeFallback(packet)
+        } else {
+		    fp, _, _, errFg = lib.ExtractFingerprintRealTime(packet, *a.Timestamp)
+        }
 
-		if err != nil {
+		if errFg != nil {
 			_ = nf.SetVerdict(id, nfqueue.NfAccept)
 			return 0
 		}
@@ -54,28 +81,17 @@ func processPacket(nf *nfqueue.Nfqueue) nfqueue.HookFunc {
         dst := packet.NetworkLayer().NetworkFlow().Dst()
         dstIp := net.IP(dst.Raw())
 
+        matchedFlag := flagRegex.FindString(string(body))
+
         //no flag ins shall be reject
-        if  dstIp.Equal(host) && flagRegex.Match(body) || (*secretRegexString != "" && secretRegex.Match(body))  {
+        //statisticamente la flag falsa più comune è AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=, ignoriamola
+        if  dstIp.Equal(host) && matchedFlag != "" && matchedFlag != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" || (*secretRegexString != "" && secretRegex.Match(body))  {
             fmt.Println("\033[33mFLAG-IN OR SECRET DETECTED :\033[0m ", fp)
             if(!fp.ContainedIn(fgsToUnmatch)) {
 		        fgsToUnmatch = append(fgsToUnmatch, fp.Haiku())
             }
 
-            body = body[min(len(body), 100):]
-            // replace non-printable characters with .
-            for i := 0; i < len(body); i++ {
-                if body[i] < 32 || body[i] > 126 {
-                    body[i] = '.'
-                }
-            }
-
-            if len(body) != 0 {
-                networkFlow := packet.NetworkLayer().NetworkFlow()
-                fmt.Printf("[%d]\t%s -> %s (%s): %s\n", id,
-                    networkFlow.Src().String(), networkFlow.Dst().String(),
-                    fp, body)
-            }
-
+            printBody(body, packet, fp, id)
 
 			_ = nf.SetVerdict(id, nfqueue.NfAccept)
             return 0
@@ -87,20 +103,7 @@ func processPacket(nf *nfqueue.Nfqueue) nfqueue.HookFunc {
 			return 0
         }
 
-		body = body[min(len(body), 100):]
-		// replace non-printable characters with .
-		for i := 0; i < len(body); i++ {
-			if body[i] < 32 || body[i] > 126 {
-				body[i] = '.'
-			}
-		}
-
-		if len(body) != 0 {
-			networkFlow := packet.NetworkLayer().NetworkFlow()
-			fmt.Printf("[%d]\t%s -> %s (%s): %s\n", id,
-				networkFlow.Src().String(), networkFlow.Dst().String(),
-				fp, body)
-		}
+        printBody(body, packet, fp, id)
 
 		_ = nf.SetVerdict(id, nfqueue.NfAccept)
 		return 0
@@ -143,7 +146,7 @@ var (
 	queueNum             = flag.Uint("queue", 420, "nfqueue queue number")
 	fingerprintToMatch   = flag.String("black", "", "fingerprints to block")
 	fingerprintToUnmatch = flag.String("white", "", "fingerprints to NOT block initially (ovverrides the blacklist if necessary)")
-    hostString           = flag.String("host", "10.60.2.1", "host ip, in order to find flag ins")
+    hostString           = flag.String("host", "10.60.1.1", "host ip, in order to find flag ins")
     secretRegexString    = flag.String("secret", "", "secret regex to whitelist arbirary hosts")
 )
 
@@ -233,7 +236,7 @@ func main() {
 
     new_fgs := difference(fgsToUnmatch, originalFgsToUnmatch)
 
-    fmt.Println("New fingerprints: ")
+    fmt.Println("New whitelisted fingerprints: ")
 
     for i, fg := range new_fgs {
         if i < len(new_fgs)-1 {
