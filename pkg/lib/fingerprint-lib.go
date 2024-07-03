@@ -42,6 +42,8 @@ func (sample Fingerprint) ContainedIn(toMatch []string) (bool) {
     return false
 }
 
+var precision uint64 = 10000
+
 func ExtractFingerprint(packet gopacket.Packet) (Fingerprint, uint64, uint64, error) {
 	var fg Fingerprint
 
@@ -58,11 +60,12 @@ func ExtractFingerprint(packet gopacket.Packet) (Fingerprint, uint64, uint64, er
 	}
 
 
-	delta := roundup(uint64(packet.Metadata().Timestamp.UnixMilli())-tsVal, 3000)
+	delta := roundup(uint64(packet.Metadata().Timestamp.UnixMilli())-tsVal, precision)
 	fg = Fingerprint{Delta: delta}
 	return fg, uint64(packet.Metadata().Timestamp.UnixMilli()), tsVal, nil
 
 }
+
 
 func ExtractFingerprintRealTime(packet gopacket.Packet, t time.Time) (Fingerprint, uint64, uint64, error) {
 	var fg Fingerprint
@@ -85,7 +88,7 @@ func ExtractFingerprintRealTime(packet gopacket.Packet, t time.Time) (Fingerprin
 
     millis := t.UnixMilli()
 
-	delta := roundup(uint64(millis)-tsVal, 2000)
+	delta := roundup(uint64(millis)-tsVal, precision)
 	fg = Fingerprint{Delta: delta}
 	return fg, uint64(millis), tsVal, nil
 }
@@ -108,7 +111,7 @@ func ExtractFingerprintRealTimeFallback(packet gopacket.Packet) (Fingerprint, ui
 
     millis := time.Now().UnixMilli()
 
-	delta := roundup(uint64(millis)-tsVal, 2000)
+	delta := roundup(uint64(millis)-tsVal, precision)
 	fg = Fingerprint{Delta: delta}
 	return fg, uint64(millis), tsVal, nil
 }

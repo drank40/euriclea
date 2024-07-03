@@ -40,9 +40,9 @@ func printBody(body []byte, packet gopacket.Packet, fp lib.Fingerprint, id uint3
 
     if len(body) != 0 {
         networkFlow := packet.NetworkLayer().NetworkFlow()
-        fmt.Printf("[%d]\t\033[32m%s\033[0m -> %s (\033[33m%s\033[0m): %s\n", id,
+        fmt.Printf("[%d]\t\033[32m%s\033[0m -> %s (\033[33m%s\033[0m:%d): %s\n", id,
             networkFlow.Src().String(), networkFlow.Dst().String(),
-            fp, body)
+            fp, fp.Delta, body)
     }
 
 }

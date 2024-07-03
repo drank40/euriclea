@@ -88,7 +88,7 @@ func ShowBodyInfo(packet gopacket.Packet, fp lib.Fingerprint, displayContent boo
             tcpFlow.Src().String(),
 			networkFlow.Dst().String(),
             tcpFlow.Dst().String(),
-            fmt.Sprintf("(\033[33m%s\033[0m)", fp),
+            fmt.Sprintf("(\033[33m%s\033[0m:%d)", fp, fp.Delta),
             packet.Metadata().Timestamp,
 			body)
 	}
