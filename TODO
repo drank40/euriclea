@@ -1,0 +1,4 @@
+- Improve haikus to a bijection
+    - Turn string cmp into number comparision
+- Document code and comment
+

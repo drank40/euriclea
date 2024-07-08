@@ -9,13 +9,16 @@ import (
     "errors"
     "time"
 	"math"
-	"github.com/yelinaung/go-haikunator"
+    "sort"
+	"pcap-go/pkg/haiku"
 )
 
 type Fingerprint struct {
 	Delta uint64 // Delta between packet timestamp and host timestamp
 	haiku string
 }
+
+var precision uint64 = 10000
 
 // Haiku returns a haiku string representation of the fingerprint
 func (fg Fingerprint) Haiku() string {
@@ -26,23 +29,20 @@ func (fg Fingerprint) Haiku() string {
 }
 
 func (fg Fingerprint) generateHaiku() string {
-	return haikunator.New(int64(fg.Delta)).Haikunate()
+	return haiku.ToHaiku(int(fg.Delta))
 }
 
 // String returns a string representation of the fingerprint
 func (fg Fingerprint) String() string { return fg.Haiku() }
 
-func (sample Fingerprint) ContainedIn(toMatch []string) (bool) {
-    for _, fg := range toMatch {
-        if sample.Haiku() == fg {
-            return true
-        }
-    }
-
-    return false
+func binarySearch(arr []int, num int) bool {
+    index := sort.SearchInts(arr, num)
+    return index < len(arr) && arr[index] == num
 }
 
-var precision uint64 = 10000
+func (sample Fingerprint) ContainedIn(toMatch []string) (bool) {
+    return binarySearch(haiku.FromHaikus(toMatch), int(sample.Delta))
+}
 
 func ExtractFingerprint(packet gopacket.Packet) (Fingerprint, uint64, uint64, error) {
 	var fg Fingerprint
@@ -60,7 +60,7 @@ func ExtractFingerprint(packet gopacket.Packet) (Fingerprint, uint64, uint64, er
 	}
 
 
-	delta := roundup(uint64(packet.Metadata().Timestamp.UnixMilli())-tsVal, precision)
+	delta := approx(uint64(packet.Metadata().Timestamp.UnixMilli())-tsVal, precision)
 	fg = Fingerprint{Delta: delta}
 	return fg, uint64(packet.Metadata().Timestamp.UnixMilli()), tsVal, nil
 
@@ -88,7 +88,7 @@ func ExtractFingerprintRealTime(packet gopacket.Packet, t time.Time) (Fingerprin
 
     millis := t.UnixMilli()
 
-	delta := roundup(uint64(millis)-tsVal, precision)
+	delta := approx(uint64(millis)-tsVal, precision)
 	fg = Fingerprint{Delta: delta}
 	return fg, uint64(millis), tsVal, nil
 }
@@ -111,14 +111,14 @@ func ExtractFingerprintRealTimeFallback(packet gopacket.Packet) (Fingerprint, ui
 
     millis := time.Now().UnixMilli()
 
-	delta := roundup(uint64(millis)-tsVal, precision)
+	delta := approx(uint64(millis)-tsVal, precision)
 	fg = Fingerprint{Delta: delta}
 	return fg, uint64(millis), tsVal, nil
 }
 
 
-func roundup(x, n uint64) uint64 {
-	return uint64(math.Ceil(float64(x)/float64(n))) * n
+func approx(x, n uint64) uint64 {
+	return uint64(math.Ceil(float64(x)/float64(n))) % uint64(math.Pow(2, 18))
 }
 
 func ExtractTimestamps(opts []layers.TCPOption) (uint64, uint64, error) {
